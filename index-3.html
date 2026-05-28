@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MintDrop — Multi-Chain NFT $1 Mint</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=DM+Mono:ital,wght@0,300;0,400;1,300&display=swap');
+
+:root {
+  --bg:     #060608;
+  --bg2:    #0d0d11;
+  --bg3:    #13131a;
+  --card:   #0f0f16;
+  --border: #1e1e2e;
+  --text:   #e8e8f0;
+  --muted:  #555570;
+  --white:  #ffffff;
+
+  /* Chain accent — changes per chain */
+  --accent: #7c3aed;
+  --accent2: #a855f7;
+  --glow: 0 0 40px rgba(124,58,237,0.4);
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+
+body{
+  font-family:'DM Mono',monospace;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* Animated bg mesh */
+.mesh{
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 20%, rgba(124,58,237,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 80% 80%, rgba(16,185,129,0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(59,130,246,0.03) 0%, transparent 70%);
+  animation: meshMove 12s ease-in-out infinite alternate;
+}
+@keyframes meshMove{
+  0%{background-position:0% 0%,100% 100%,50% 50%;}
+  100%{background-position:5% 8%,95% 92%,48% 52%;}
+}
+
+/* Scanlines */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);
+}
+
+.wrap{max-width:1140px;margin:0 auto;padding:0 20px;position:relative;z-index:1;}
+
+/* ══ HEADER ══════════════════════════════════════ */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:24px 0 20px;
+  border-bottom:1px solid var(--border);
+  gap:12px;flex-wrap:wrap;
+}
+.logo{
+  font-family:'Orbitron',sans-serif;
+  font-weight:900;font-size:1.5rem;
+  letter-spacing:.08em;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  text-shadow:none;
+}
+
+.header-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+
+.pill{
+  font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;
+  border:1px solid var(--border);padding:6px 14px;
+  color:var(--muted);white-space:nowrap;
+}
+
+#walletBtn{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;color:#fff;
+  font-family:'DM Mono',monospace;font-size:.7rem;
+  letter-spacing:.1em;text-transform:uppercase;
+  padding:10px 22px;cursor:pointer;
+  transition:all .2s;white-space:nowrap;
+}
+#walletBtn:hover{opacity:.85;box-shadow:var(--glow);}
+#walletBtn.connected{
+  background:transparent;
+  border:1px solid var(--accent);
+  color:var(--accent2);
+}
+
+/* ══ CHAIN SELECTOR ════════════════════════════ */
+.chain-bar{
+  padding:20px 0 0;
+  display:flex;gap:8px;flex-wrap:wrap;
+  align-items:center;
+}
+.chain-bar-label{
+  font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-right:4px;white-space:nowrap;
+}
+
+.chain-btn{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg3);border:1px solid var(--border);
+  padding:8px 14px;cursor:pointer;
+  font-family:'DM Mono',monospace;font-size:.7rem;
+  color:var(--muted);transition:all .2s;white-space:nowrap;
+}
+.chain-btn:hover{border-color:var(--accent);color:var(--text);}
+.chain-btn.active{
+  border-color:var(--accent);
+  color:var(--accent2);
+  background:rgba(124,58,237,0.08);
+  box-shadow:0 0 0 1px var(--accent) inset;
+}
+.chain-btn.active .chain-dot{background:var(--accent);box-shadow:0 0 8px var(--accent);}
+.chain-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--muted);transition:all .2s;
+}
+.chain-icon{font-size:.95rem;line-height:1;}
+
+/* ══ HERO GRID ═══════════════════════════════════ */
+.hero{
+  display:grid;
+  grid-template-columns:1fr 420px;
+  gap:48px;
+  padding:52px 0 48px;
+  align-items:start;
+}
+@media(max-width:820px){
+  .hero{grid-template-columns:1fr;gap:32px;}
+}
+
+/* left */
+.hero-eyebrow{
+  font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--accent2);margin-bottom:18px;
+  display:flex;align-items:center;gap:10px;
+}
+.hero-eyebrow::before{content:'';width:20px;height:1px;background:var(--accent);}
+
+h1{
+  font-family:'Orbitron',sans-serif;font-weight:900;
+  font-size:clamp(2.6rem,6vw,4.8rem);
+  line-height:.96;letter-spacing:-.01em;
+  margin-bottom:24px;
+}
+h1 .line-acc{
+  display:block;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+
+.hero-desc{
+  font-size:.82rem;line-height:1.85;color:#888;
+  max-width:420px;margin-bottom:32px;
+}
+
+.stats-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:1px;background:var(--border);
+  border:1px solid var(--border);
+  margin-bottom:0;
+}
+.stat-cell{
+  background:var(--card);
+  padding:18px 16px;
+}
+.stat-val{
+  font-family:'Orbitron',sans-serif;
+  font-size:1.6rem;font-weight:700;
+  color:var(--accent2);margin-bottom:4px;
+}
+.stat-key{font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+
+/* ══ NFT PREVIEW CARD ═══════════════════════════ */
+.nft-preview{
+  background:var(--card);
+  border:1px solid var(--border);
+  position:relative;overflow:hidden;
+}
+.nft-preview::before{
+  content:'';
+  position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));
+  background-size:200%;
+  animation:shimAnim 3s linear infinite;
+}
+@keyframes shimAnim{0%{background-position:0%}100%{background-position:200%}}
+
+canvas#nftCanvas{
+  display:block;width:100%;
+  aspect-ratio:1;background:#08080f;
+}
+
+.nft-meta-bar{
+  padding:18px 20px;
+  border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.nft-name{
+  font-family:'Orbitron',sans-serif;
+  font-size:.85rem;font-weight:700;
+  letter-spacing:.05em;
+}
+.nft-price-tag{
+  font-family:'Orbitron',sans-serif;
+  font-size:1.3rem;font-weight:900;
+  color:var(--accent2);
+}
+
+.nft-chain-badge{
+  position:absolute;top:12px;right:12px;
+  background:rgba(6,6,8,.85);
+  border:1px solid var(--border);
+  padding:5px 10px;
+  font-size:.6rem;letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent2);
+  backdrop-filter:blur(4px);
+}
+
+/* ══ MINT BOX ════════════════════════════════════ */
+.mint-section{padding:0 0 64px;}
+
+.section-head{
+  font-family:'Orbitron',sans-serif;
+  font-size:1.2rem;font-weight:700;
+  letter-spacing:.06em;
+  margin-bottom:28px;
+  display:flex;align-items:center;gap:16px;
+}
+.section-head::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.mint-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px;
+  align-items:start;
+}
+@media(max-width:640px){.mint-grid{grid-template-columns:1fr;}}
+
+.mint-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  padding:28px;
+  position:relative;
+}
+.mint-card::after{
+  content:'';
+  position:absolute;bottom:0;right:0;
+  width:40px;height:40px;
+  border-right:2px solid var(--accent);
+  border-bottom:2px solid var(--accent);
+  opacity:.4;
+}
+
+.field-label{
+  font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:10px;display:block;
+}
+
+/* Quantity */
+.qty-row{display:flex;align-items:center;gap:0;margin-bottom:22px;}
+.qty-wrap{display:flex;border:1px solid var(--border);overflow:hidden;}
+.qbtn{
+  background:var(--bg3);border:none;
+  color:var(--text);width:44px;height:44px;
+  font-size:1.3rem;cursor:pointer;transition:.15s;
+}
+.qbtn:hover{background:var(--accent);color:#fff;}
+#qtyNum{
+  width:64px;height:44px;
+  background:var(--bg2);border:none;
+  color:var(--accent2);
+  font-family:'Orbitron',sans-serif;font-size:1.3rem;font-weight:700;
+  text-align:center;outline:none;
+}
+
+/* Cost breakdown */
+.cost-rows{margin-bottom:22px;}
+.cost-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 0;border-bottom:1px solid var(--border);
+  font-size:.75rem;
+}
+.cost-row:last-child{border-bottom:none;}
+.cost-row .lbl{color:var(--muted);}
+.cost-row .val{color:var(--text);font-weight:400;}
+.cost-row.total .val{
+  font-family:'Orbitron',sans-serif;font-size:1rem;font-weight:700;
+  color:var(--accent2);
+}
+
+/* Mint button */
+.mint-btn{
+  width:100%;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;color:#fff;
+  font-family:'Orbitron',sans-serif;font-size:.9rem;font-weight:700;
+  letter-spacing:.1em;padding:18px;cursor:pointer;
+  transition:all .2s;position:relative;overflow:hidden;
+}
+.mint-btn::before{
+  content:'';position:absolute;inset:0;
+  background:rgba(255,255,255,.1);
+  transform:translateX(-100%) skewX(-15deg);
+  transition:transform .4s;
+}
+.mint-btn:hover::before{transform:translateX(120%) skewX(-15deg);}
+.mint-btn:hover{box-shadow:var(--glow);}
+.mint-btn:disabled{
+  background:var(--border);color:var(--muted);cursor:not-allowed;box-shadow:none;
+}
+.mint-btn:disabled::before{display:none;}
+
+.hint-small{
+  font-size:.6rem;color:var(--muted);
+  margin-top:12px;line-height:1.7;text-align:center;
+}
+.hint-small a{color:var(--accent2);text-decoration:none;}
+
+/* Chain status card */
+.chain-info-card{
+  background:var(--card);border:1px solid var(--border);
+  padding:28px;
+}
+.chain-info-title{
+  font-family:'Orbitron',sans-serif;font-size:.75rem;
+  letter-spacing:.1em;margin-bottom:18px;color:var(--muted);
+}
+.chain-info-row{
+  display:flex;justify-content:space-between;
+  font-size:.7rem;padding:9px 0;
+  border-bottom:1px solid var(--border);
+}
+.chain-info-row:last-child{border:none;}
+.chain-info-row .k{color:var(--muted);}
+.chain-info-row .v{color:var(--accent2);word-break:break-all;text-align:right;max-width:58%;}
+.v.addr{font-size:.6rem;}
+
+/* ══ HOW IT WORKS ════════════════════════════════ */
+.how-section{
+  padding:0 0 64px;
+  border-top:1px solid var(--border);
+  padding-top:52px;
+}
+.how-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:1px;background:var(--border);
+  border:1px solid var(--border);
+}
+.how-step{
+  background:var(--card);padding:28px 22px;
+}
+.how-num{
+  font-family:'Orbitron',sans-serif;font-size:3rem;font-weight:900;
+  color:var(--border);margin-bottom:14px;line-height:1;
+}
+.how-t{font-size:.75rem;font-weight:700;color:var(--accent2);margin-bottom:8px;}
+.how-d{font-size:.68rem;color:var(--muted);line-height:1.75;}
+
+/* ══ CONTRACTS TABLE ════════════════════════════ */
+.contracts-section{padding:0 0 80px;}
+
+.contracts-table{width:100%;border-collapse:collapse;font-size:.7rem;}
+.contracts-table th{
+  text-align:left;padding:12px 16px;
+  font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);border-bottom:1px solid var(--border);
+}
+.contracts-table td{
+  padding:14px 16px;border-bottom:1px solid var(--border);
+}
+.contracts-table tr:last-child td{border:none;}
+.contracts-table tr:hover td{background:var(--bg3);}
+.chain-name-cell{display:flex;align-items:center;gap:10px;}
+.status-badge{
+  display:inline-block;padding:3px 10px;
+  font-size:.58rem;letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.status-deployed{background:rgba(16,185,129,.12);color:#10b981;border:1px solid rgba(16,185,129,.25);}
+.status-pending{background:rgba(245,158,11,.08);color:#f59e0b;border:1px solid rgba(245,158,11,.2);}
+.addr-cell{font-size:.62rem;color:var(--muted);}
+.addr-cell.filled{color:var(--accent2);}
+
+/* ══ FOOTER ══════════════════════════════════════ */
+footer{
+  border-top:1px solid var(--border);
+  padding:24px 0;
+  display:flex;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;gap:12px;
+  font-size:.62rem;color:var(--muted);
+}
+
+/* ══ MODAL ═══════════════════════════════════════ */
+.modal-bg{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.8);backdrop-filter:blur(6px);
+  z-index:900;align-items:center;justify-content:center;
+}
+.modal-bg.open{display:flex;}
+.modal{
+  background:var(--card);border:1px solid var(--border);
+  width:100%;max-width:380px;margin:16px;
+  position:relative;
+}
+.modal::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+}
+.modal-hd{
+  padding:24px 24px 18px;
+  border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;
+}
+.modal-title{font-family:'Orbitron',sans-serif;font-size:1rem;font-weight:700;}
+.modal-x{background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;}
+.modal-x:hover{color:var(--text);}
+.wallet-list{padding:12px;}
+.w-opt{
+  display:flex;align-items:center;gap:14px;
+  padding:14px;border:1px solid var(--border);
+  margin-bottom:8px;cursor:pointer;
+  transition:all .2s;background:var(--bg2);
+}
+.w-opt:hover{border-color:var(--accent);background:var(--bg3);}
+.w-opt img{width:34px;height:34px;border-radius:8px;object-fit:contain;}
+.w-name{font-size:.8rem;font-weight:700;}
+.w-sub{font-size:.6rem;color:var(--muted);}
+
+/* ══ TOAST ═══════════════════════════════════════ */
+#toast{
+  position:fixed;bottom:28px;right:28px;
+  background:var(--card);border:1px solid var(--border);
+  border-left:3px solid var(--accent);
+  padding:14px 18px;font-size:.75rem;
+  max-width:320px;z-index:9999;
+  transform:translateY(100px);opacity:0;
+  transition:all .3s;pointer-events:none;
+}
+#toast.show{transform:translateY(0);opacity:1;}
+#toast.ok{border-left-color:#10b981;}
+#toast.err{border-left-color:#ef4444;}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px);}to{opacity:1;transform:translateY(0);}}
+header,section,.hero{animation:fadeUp .5s ease both;}
+.mint-section{animation-delay:.08s;}
+.how-section{animation-delay:.14s;}
+.contracts-section{animation-delay:.18s;}
+</style>
+</head>
+<body>
+<div class="mesh"></div>
+
+<!-- MODAL -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <div class="modal-hd">
+      <span class="modal-title">Connect Wallet</span>
+      <button class="modal-x" onclick="closeModal()">✕</button>
+    </div>
+    <div class="wallet-list">
+      <div class="w-opt" onclick="connectWallet('metamask')">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg" alt="MetaMask"/>
+        <div><div class="w-name">MetaMask</div><div class="w-sub">Browser extension & mobile app</div></div>
+      </div>
+      <div class="w-opt" onclick="connectWallet('coinbase')">
+        <img src="https://altcoinsbox.com/wp-content/uploads/2023/01/coinbase-wallet-logo.webp" alt="Coinbase"/>
+        <div><div class="w-name">Coinbase Wallet</div><div class="w-sub">Self-custody wallet</div></div>
+      </div>
+      <div class="w-opt" onclick="connectWallet('injected')">
+        <img src="https://altcoinsbox.com/wp-content/uploads/2022/12/walletconnect-logo.webp" alt="WalletConnect"/>
+        <div><div class="w-name">WalletConnect</div><div class="w-sub">300+ wallets via QR code</div></div>
+      </div>
+      <div class="w-opt" onclick="connectWallet('trust')">
+        <img src="https://altcoinsbox.com/wp-content/uploads/2023/01/trust-wallet-logo.webp" alt="Trust"/>
+        <div><div class="w-name">Trust Wallet</div><div class="w-sub">Open in Trust Wallet browser</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div class="wrap">
+
+<!-- ══ HEADER ══ -->
+<header>
+  <div class="logo">MINT<span style="opacity:.5">·</span>DROP</div>
+  <div class="header-right">
+    <div class="pill" id="networkPill">Not Connected</div>
+    <button id="walletBtn" onclick="openModal()">Connect Wallet</button>
+  </div>
+</header>
+
+<!-- ══ CHAIN SELECTOR ══ -->
+<div class="chain-bar">
+  <span class="chain-bar-label">Select Chain →</span>
+  <button class="chain-btn active" data-chain="1"        onclick="switchChain(1)">
+    <span class="chain-dot"></span><span class="chain-icon">⟠</span> Ethereum
+  </button>
+  <button class="chain-btn" data-chain="137"       onclick="switchChain(137)">
+    <span class="chain-dot"></span><span class="chain-icon">⬡</span> Polygon
+  </button>
+  <button class="chain-btn" data-chain="8453"      onclick="switchChain(8453)">
+    <span class="chain-dot"></span><span class="chain-icon">🔵</span> Base
+  </button>
+  <button class="chain-btn" data-chain="56"        onclick="switchChain(56)">
+    <span class="chain-dot"></span><span class="chain-icon">🟡</span> BNB Chain
+  </button>
+  <button class="chain-btn" data-chain="42161"     onclick="switchChain(42161)">
+    <span class="chain-dot"></span><span class="chain-icon">🔷</span> Arbitrum
+  </button>
+</div>
+
+<!-- ══ HERO ══ -->
+<section class="hero">
+  <div>
+    <div class="hero-eyebrow">Multi-Chain · On-Chain Art · ERC-721</div>
+    <h1>
+      MINT AN<br>
+      NFT ON<br>
+      <span class="line-acc" id="heroChainLabel">ETHEREUM</span>
+    </h1>
+    <p class="hero-desc">
+      Generative art stored 100% on-chain — no IPFS needed.
+      Every NFT is unique, permanently yours, and costs just
+      <strong style="color:var(--accent2)">$1</strong> worth of
+      native tokens. All proceeds go directly to the treasury wallet.
+    </p>
+    <div class="stats-grid">
+      <div class="stat-cell">
+        <div class="stat-val" id="statMinted">—</div>
+        <div class="stat-key">Minted</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-val" id="statLeft">—</div>
+        <div class="stat-key">Remaining</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-val">$1</div>
+        <div class="stat-key">Per NFT</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nft-preview">
+    <div class="nft-chain-badge" id="chainBadge">ETHEREUM</div>
+    <canvas id="nftCanvas" width="600" height="600"></canvas>
+    <div class="nft-meta-bar">
+      <div class="nft-name">MINTDROP GEN-I</div>
+      <div class="nft-price-tag">$1.00</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ MINT SECTION ══ -->
+<section class="mint-section">
+  <div class="section-head">Mint</div>
+  <div class="mint-grid">
+
+    <div class="mint-card">
+      <span class="field-label">Quantity (max 20)</span>
+      <div class="qty-wrap" style="margin-bottom:22px;">
+        <button class="qbtn" onclick="changeQty(-1)">−</button>
+        <input id="qtyNum" type="number" value="1" min="1" max="20" readonly/>
+        <button class="qbtn" onclick="changeQty(1)">+</button>
+      </div>
+
+      <span class="field-label">Cost Breakdown</span>
+      <div class="cost-rows">
+        <div class="cost-row">
+          <span class="lbl">Price per NFT</span>
+          <span class="val">$1.00</span>
+        </div>
+        <div class="cost-row">
+          <span class="lbl">Quantity</span>
+          <span class="val" id="qtyDisplay">× 1</span>
+        </div>
+        <div class="cost-row">
+          <span class="lbl">Native token est.</span>
+          <span class="val" id="nativeEst">—</span>
+        </div>
+        <div class="cost-row total">
+          <span class="lbl">Total USD</span>
+          <span class="val" id="totalUSD">$1.00</span>
+        </div>
+      </div>
+
+      <button class="mint-btn" id="mintBtn" onclick="handleMint()">
+        <span id="mintBtnTxt">Connect Wallet to Mint</span>
+      </button>
+      <div class="hint-small">
+        Gas fees not included · <a href="#contracts">View contracts ↓</a>
+      </div>
+    </div>
+
+    <div class="chain-info-card">
+      <div class="chain-info-title">Chain Info</div>
+      <div class="chain-info-row">
+        <span class="k">Network</span>
+        <span class="v" id="ciNetwork">Ethereum Mainnet</span>
+      </div>
+      <div class="chain-info-row">
+        <span class="k">Chain ID</span>
+        <span class="v" id="ciChainId">1</span>
+      </div>
+      <div class="chain-info-row">
+        <span class="k">Native Token</span>
+        <span class="v" id="ciToken">ETH</span>
+      </div>
+      <div class="chain-info-row">
+        <span class="k">Est. Rate</span>
+        <span class="v" id="ciRate">$3,500 / ETH</span>
+      </div>
+      <div class="chain-info-row">
+        <span class="k">Contract</span>
+        <span class="v addr" id="ciContract">—</span>
+      </div>
+      <div class="chain-info-row">
+        <span class="k">Treasury</span>
+        <span class="v addr addr-cell filled">0x03Bb…20fD</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ HOW IT WORKS ══ -->
+<section class="how-section">
+  <div class="section-head">How It Works</div>
+  <div class="how-grid">
+    <div class="how-step">
+      <div class="how-num">01</div>
+      <div class="how-t">Pick a Chain</div>
+      <div class="how-d">Choose Ethereum, Polygon, Base, BNB, or Arbitrum. Switch chains with one click.</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">02</div>
+      <div class="how-t">Connect Wallet</div>
+      <div class="how-d">MetaMask, Coinbase Wallet, Trust Wallet, or any WalletConnect-supported wallet.</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">03</div>
+      <div class="how-t">Set Quantity</div>
+      <div class="how-d">Choose 1–20 NFTs per tx. Each costs $1 worth of the chain's native token.</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">04</div>
+      <div class="how-t">Confirm & Own</div>
+      <div class="how-d">Approve in wallet. ETH/MATIC/BNB goes direct to treasury. NFT lands in your wallet instantly.</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">05</div>
+      <div class="how-t">On-Chain Art</div>
+      <div class="how-d">Your NFT's generative SVG art is stored inside the contract — no IPFS, no servers, forever.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ CONTRACTS TABLE ══ -->
+<section class="contracts-section" id="contracts">
+  <div class="section-head">Deployed Contracts</div>
+  <table class="contracts-table">
+    <thead>
+      <tr>
+        <th>Chain</th>
+        <th>Chain ID</th>
+        <th>Contract Address</th>
+        <th>Native Token</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="contractsTableBody">
+      <!-- filled by JS -->
+    </tbody>
+  </table>
+  <p style="font-size:.62rem;color:var(--muted);margin-top:16px;">
+    Treasury (all chains): <span style="color:var(--accent2)">0x03Bb17F8776881b185c4EE03eba372bA2b1320fD</span>
+  </p>
+</section>
+
+<footer>
+  <span>© 2026 MintDrop · Multi-Chain NFT</span>
+  <span>ERC-721 · Fully On-Chain Art · $1 per mint</span>
+</footer>
+</div><!-- /wrap -->
+
+<!-- ══ SCRIPT ══════════════════════════════════════════ -->
+<script>
+/* ─────────────────────────────────────────────────────────
+   ⚙️  CONFIGURATION
+   After deploying MintNFT_Multichain.sol on each network,
+   paste the contract address into the "address" field below.
+───────────────────────────────────────────────────────── */
+const CHAINS = {
+  1: {
+    name:       "Ethereum Mainnet",
+    short:      "Ethereum",
+    chainId:    1,
+    token:      "ETH",
+    usdRate:    3500,
+    icon:       "⟠",
+    color:      "#627eea",
+    rpc:        "https://cloudflare-eth.com",
+    explorer:   "https://etherscan.io",
+    address:    "PASTE_ETHEREUM_CONTRACT_ADDRESS",   // ← replace after deploy
+  },
+  137: {
+    name:       "Polygon Mainnet",
+    short:      "Polygon",
+    chainId:    137,
+    token:      "MATIC",
+    usdRate:    0.85,
+    icon:       "⬡",
+    color:      "#8247e5",
+    rpc:        "https://polygon-rpc.com",
+    explorer:   "https://polygonscan.com",
+    address:    "PASTE_POLYGON_CONTRACT_ADDRESS",
+  },
+  8453: {
+    name:       "Base Mainnet",
+    short:      "Base",
+    chainId:    8453,
+    token:      "ETH",
+    usdRate:    3500,
+    icon:       "🔵",
+    color:      "#0052ff",
+    rpc:        "https://mainnet.base.org",
+    explorer:   "https://basescan.org",
+    address:    "PASTE_BASE_CONTRACT_ADDRESS",
+  },
+  56: {
+    name:       "BNB Chain",
+    short:      "BNB",
+    chainId:    56,
+    token:      "BNB",
+    usdRate:    600,
+    icon:       "🟡",
+    color:      "#f3ba2f",
+    rpc:        "https://bsc-dataseed.binance.org",
+    explorer:   "https://bscscan.com",
+    address:    "PASTE_BNB_CONTRACT_ADDRESS",
+  },
+  42161: {
+    name:       "Arbitrum One",
+    short:      "Arbitrum",
+    chainId:    42161,
+    token:      "ETH",
+    usdRate:    3500,
+    icon:       "🔷",
+    color:      "#28a0f0",
+    rpc:        "https://arb1.arbitrum.io/rpc",
+    explorer:   "https://arbiscan.io",
+    address:    "PASTE_ARBITRUM_CONTRACT_ADDRESS",
+  },
+};
+
+const TREASURY = "0x03Bb17F8776881b185c4EE03eba372bA2b1320fD";
+
+const ABI = [
+  "function mint(uint256 quantity) external payable",
+  "function mintPriceInWei() external view returns (uint256)",
+  "function totalMinted() external view returns (uint256)",
+  "function maxSupply() external view returns (uint256)",
+];
+
+/* ── State ── */
+let selectedChainId = 1;
+let provider = null;
+let signer   = null;
+let contract = null;
+let walletAddress = null;
+let mintPriceWei  = null;
+let qty = 1;
+
+const PLACEHOLDER = "PASTE_";
+
+/* ══════════════════════════════════════════
+   CANVAS — Generative Preview Art
+══════════════════════════════════════════ */
+let animHandle;
+function drawCanvas(chainColor){
+  const canvas = document.getElementById('nftCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = 600, H = 600;
+
+  cancelAnimationFrame(animHandle);
+
+  const hex = (v) => v.toString(16).padStart(2,'0');
+  const parseCol = (c) => {
+    // parse hex color to r,g,b
+    c = c.replace('#','');
+    return [parseInt(c.substr(0,2),16),parseInt(c.substr(2,2),16),parseInt(c.substr(4,2),16)];
+  };
+  const [r,g,b] = parseCol(chainColor || '#7c3aed');
+
+  // Static base
+  ctx.fillStyle = '#08080f';
+  ctx.fillRect(0,0,W,H);
+
+  // Glow
+  const glow = (x,y,rad,a)=>{
+    const g = ctx.createRadialGradient(x,y,0,x,y,rad);
+    g.addColorStop(0,`rgba(${r},${g},${b},${a})`);
+    g.addColorStop(1,'transparent');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,rad,0,Math.PI*2);ctx.fill();
+  };
+  glow(200,160,200,.18);glow(400,400,180,.12);
+
+  // Grid
+  ctx.strokeStyle=`rgba(${r},${g},${b},0.07)`;ctx.lineWidth=1;
+  for(let x=0;x<=W;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<=H;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+  // Hexagons
+  const hexPoly=(cx,cy,rad,col,lw,op)=>{
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a=Math.PI/3*i-Math.PI/6;
+      ctx[i?'lineTo':'moveTo'](cx+rad*Math.cos(a),cy+rad*Math.sin(a));
+    }
+    ctx.closePath();
+    ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.globalAlpha=op;ctx.stroke();ctx.globalAlpha=1;
+  };
+  hexPoly(300,300,160,`rgb(${r},${g},${b})`,1.5,.35);
+  hexPoly(300,300,110,`rgb(${r},${g},${b})`,1,.25);
+  hexPoly(300,300,65, `rgb(${r},${g},${b})`,1,.5);
+
+  // Scatter dots
+  const seed = selectedChainId * 999;
+  for(let i=0;i<50;i++){
+    const sx=Math.sin(seed+i*37.3)*10000; const px=(sx-Math.floor(sx))*W;
+    const sy=Math.sin(seed+i*19.7)*10000; const py=(sy-Math.floor(sy))*H;
+    const sr=Math.sin(seed+i*7.1)*10000;  const pr=(sr-Math.floor(sr))*3+.5;
+    ctx.beginPath();ctx.arc(px,py,pr,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${r},${g},${b},${.3+.4*(pr/3.5)})`;
+    ctx.fill();
+  }
+
+  // Center pulse (animated)
+  let t=0;
+  function tick(){
+    ctx.clearRect(282,282,36,36);
+    const p=.7+.3*Math.sin(t);
+    const grad=ctx.createRadialGradient(300,300,0,300,300,16*p);
+    grad.addColorStop(0,`rgba(${r},${g},${b},0.9)`);
+    grad.addColorStop(1,`rgba(${r},${g},${b},0)`);
+    ctx.fillStyle=grad;ctx.beginPath();ctx.arc(300,300,16*p,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(300,300,5,0,Math.PI*2);
+    ctx.fillStyle=`rgb(${r},${g},${b})`;ctx.fill();
+    t+=0.05;
+    animHandle=requestAnimationFrame(tick);
+  }
+
+  // Label
+  ctx.font='bold 13px "DM Mono",monospace';
+  ctx.fillStyle=`rgba(${r},${g},${b},.7)`;
+  ctx.textAlign='center';
+  ctx.fillText('MINTDROP GEN-I · PREVIEW',300,564);
+  ctx.font='10px "DM Mono",monospace';
+  ctx.fillStyle='rgba(255,255,255,.2)';
+  ctx.fillText('ON-CHAIN SVG · NO IPFS',300,580);
+
+  tick();
+}
+
+/* ══════════════════════════════════════════
+   CHAIN SWITCHING
+══════════════════════════════════════════ */
+function switchChain(chainId){
+  selectedChainId = chainId;
+  const ch = CHAINS[chainId];
+
+  // Update CSS accent
+  document.documentElement.style.setProperty('--accent',  ch.color);
+  document.documentElement.style.setProperty('--accent2', ch.color);
+  document.documentElement.style.setProperty('--glow',    `0 0 40px ${ch.color}66`);
+
+  // Update chain buttons
+  document.querySelectorAll('.chain-btn').forEach(b=>{
+    b.classList.toggle('active', parseInt(b.dataset.chain)===chainId);
+  });
+
+  // Update hero label
+  document.getElementById('heroChainLabel').textContent = ch.short.toUpperCase();
+  document.getElementById('chainBadge').textContent = ch.short.toUpperCase();
+
+  // Update chain info panel
+  document.getElementById('ciNetwork').textContent  = ch.name;
+  document.getElementById('ciChainId').textContent  = ch.chainId;
+  document.getElementById('ciToken').textContent    = ch.token;
+  document.getElementById('ciRate').textContent     = `$${ch.usdRate.toLocaleString()} / ${ch.token}`;
+  const addr = ch.address;
+  const ci = document.getElementById('ciContract');
+  if(addr.startsWith(PLACEHOLDER)){
+    ci.textContent = 'Not yet deployed';ci.classList.remove('filled');
+  } else {
+    ci.textContent = addr.slice(0,10)+'…'+addr.slice(-6);ci.classList.add('filled');
+  }
+
+  updateCostDisplay();
+  drawCanvas(ch.color);
+
+  // Re-wire contract if wallet connected
+  if(signer && !ch.address.startsWith(PLACEHOLDER)){
+    contract = new ethers.Contract(ch.address, ABI, signer);
+    loadContractData();
+  } else {
+    contract = null;
+    statMinted.textContent='—';statLeft.textContent='—';
+  }
+
+  // If wallet connected, prompt MetaMask to switch network
+  if(walletAddress && window.ethereum){
+    window.ethereum.request({
+      method:'wallet_switchEthereumChain',
+      params:[{chainId:'0x'+chainId.toString(16)}]
+    }).catch(err=>{
+      if(err.code===4902){
+        // Chain not in wallet — add it
+        window.ethereum.request({
+          method:'wallet_addEthereumChain',
+          params:[{
+            chainId:'0x'+chainId.toString(16),
+            chainName:ch.name,
+            nativeCurrency:{name:ch.token,symbol:ch.token,decimals:18},
+            rpcUrls:[ch.rpc],
+            blockExplorerUrls:[ch.explorer]
+          }]
+        });
+      }
+    });
+  }
+}
+
+/* ══════════════════════════════════════════
+   CONTRACT TABLE
+══════════════════════════════════════════ */
+function buildContractTable(){
+  const tbody = document.getElementById('contractsTableBody');
+  tbody.innerHTML = '';
+  Object.values(CHAINS).forEach(ch=>{
+    const deployed = !ch.address.startsWith(PLACEHOLDER);
+    tbody.innerHTML += `
+      <tr>
+        <td><div class="chain-name-cell">${ch.icon} ${ch.short}</div></td>
+        <td>${ch.chainId}</td>
+        <td class="addr-cell ${deployed?'filled':''}">
+          ${deployed
+            ? `<a href="${ch.explorer}/address/${ch.address}" target="_blank" style="color:inherit">${ch.address.slice(0,12)}…${ch.address.slice(-6)}</a>`
+            : '⚠ Not deployed yet'}
+        </td>
+        <td>${ch.token}</td>
+        <td><span class="status-badge ${deployed?'status-deployed':'status-pending'}">${deployed?'Live':'Pending'}</span></td>
+      </tr>`;
+  });
+}
+
+/* ══════════════════════════════════════════
+   WALLET
+══════════════════════════════════════════ */
+function openModal(){ document.getElementById('modalBg').classList.add('open'); }
+function closeModal(){ document.getElementById('modalBg').classList.remove('open'); }
+window.addEventListener('click', e=>{ if(e.target.id==='modalBg') closeModal(); });
+
+async function connectWallet(type){
+  closeModal();
+  try {
+    let prov;
+    if(!window.ethereum){
+      showToast('No wallet detected. Install MetaMask or open in a wallet browser.','err');
+      window.open('https://metamask.io','_blank'); return;
+    }
+    const eth = window.ethereum;
+    if(type==='metamask'){
+      const mm = eth.providers ? eth.providers.find(p=>p.isMetaMask) : eth;
+      prov = new ethers.BrowserProvider(mm || eth);
+    } else if(type==='coinbase'){
+      const cb = eth.providers ? eth.providers.find(p=>p.isCoinbaseWallet) : eth;
+      prov = new ethers.BrowserProvider(cb || eth);
+    } else {
+      prov = new ethers.BrowserProvider(eth);
+    }
+
+    await prov.send('eth_requestAccounts',[]);
+    provider = prov;
+    signer   = await provider.getSigner();
+    walletAddress = await signer.getAddress();
+
+    const net = await provider.getNetwork();
+    // Sync selected chain to wallet's current chain
+    const wChain = Number(net.chainId);
+    if(CHAINS[wChain]) selectedChainId = wChain;
+
+    const short = walletAddress.slice(0,6)+'…'+walletAddress.slice(-4);
+    const wb = document.getElementById('walletBtn');
+    wb.textContent = short; wb.classList.add('connected');
+    document.getElementById('networkPill').textContent = CHAINS[selectedChainId]?.short || 'Chain '+wChain;
+
+    // Wire contract
+    const ch = CHAINS[selectedChainId];
+    if(ch && !ch.address.startsWith(PLACEHOLDER)){
+      contract = new ethers.Contract(ch.address, ABI, signer);
+      await loadContractData();
+      document.getElementById('mintBtnTxt').textContent = 'Mint Now';
+    } else {
+      document.getElementById('mintBtnTxt').textContent = 'Contract Not Deployed on This Chain';
+      document.getElementById('mintBtn').disabled = true;
+    }
+
+    showToast('Wallet connected: '+short,'ok');
+
+    window.ethereum.on('accountsChanged',()=>location.reload());
+    window.ethereum.on('chainChanged',()=>location.reload());
+
+  } catch(e){
+    console.error(e);
+    showToast('Connection failed or rejected.','err');
+  }
+}
+
+async function loadContractData(){
+  if(!contract) return;
+  try {
+    const [priceWei, minted, maxSup] = await Promise.all([
+      contract.mintPriceInWei(),
+      contract.totalMinted(),
+      contract.maxSupply(),
+    ]);
+    mintPriceWei = priceWei;
+    const m = Number(minted), ms = Number(maxSup);
+    document.getElementById('statMinted').textContent = m.toLocaleString();
+    document.getElementById('statLeft').textContent   = ms>0?(ms-m).toLocaleString():'∞';
+    updateCostDisplay();
+  } catch(e){
+    console.error(e);
+    showToast('Could not read contract data.','err');
+  }
+}
+
+/* ══════════════════════════════════════════
+   QUANTITY & COST
+══════════════════════════════════════════ */
+const statMinted = document.getElementById('statMinted');
+const statLeft   = document.getElementById('statLeft');
+
+function changeQty(d){
+  qty = Math.max(1, Math.min(20, qty+d));
+  document.getElementById('qtyNum').value = qty;
+  updateCostDisplay();
+}
+
+function updateCostDisplay(){
+  document.getElementById('qtyDisplay').textContent = '× '+qty;
+  document.getElementById('totalUSD').textContent   = '$'+qty.toFixed(2);
+
+  const ch = CHAINS[selectedChainId];
+  if(mintPriceWei){
+    const total = mintPriceWei * BigInt(qty);
+    const native = parseFloat(ethers.formatEther(total));
+    document.getElementById('nativeEst').textContent = native.toFixed(6)+' '+ch.token;
+  } else {
+    const est = qty / ch.usdRate;
+    document.getElementById('nativeEst').textContent = est.toFixed(6)+' '+ch.token+' (est)';
+  }
+}
+
+/* ══════════════════════════════════════════
+   MINT
+══════════════════════════════════════════ */
+async function handleMint(){
+  if(!walletAddress){ openModal(); return; }
+
+  const ch = CHAINS[selectedChainId];
+  if(!contract || ch.address.startsWith(PLACEHOLDER)){
+    showToast('This chain has no deployed contract yet. See deployment guide.','err'); return;
+  }
+
+  const btn = document.getElementById('mintBtn');
+  const txt = document.getElementById('mintBtnTxt');
+  btn.disabled = true;
+  try {
+    txt.textContent = 'Fetching price…';
+    const priceWei = await contract.mintPriceInWei();
+    const totalWei = priceWei * BigInt(qty);
+
+    txt.textContent = 'Confirm in wallet…';
+    showToast('Please approve the transaction in your wallet…','');
+
+    const tx = await contract.mint(qty, { value: totalWei });
+    txt.textContent = 'Minting…';
+    showToast('Transaction sent — waiting for confirmation…','');
+
+    const receipt = await tx.wait();
+    showToast(`🎉 Minted ${qty} NFT${qty>1?'s':''}! Tx: ${receipt.hash.slice(0,12)}…`,'ok');
+    txt.textContent = 'Mint Now';
+    await loadContractData();
+  } catch(e){
+    console.error(e);
+    const msg = e?.reason || e?.shortMessage || e?.message || 'Transaction failed';
+    showToast('Error: '+msg.slice(0,80),'err');
+    txt.textContent = 'Mint Now';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
+let toastT;
+function showToast(msg, type=''){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show '+type;
+  clearTimeout(toastT);
+  toastT = setTimeout(()=>{ t.className=''; }, 4500);
+}
+
+/* ══════════════════════════════════════════
+   INIT
+══════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded',()=>{
+  buildContractTable();
+  switchChain(1);   // default to Ethereum
+
+  // Auto-reconnect
+  if(window.ethereum){
+    window.ethereum.request({method:'eth_accounts'}).then(accounts=>{
+      if(accounts.length){
+        provider = new ethers.BrowserProvider(window.ethereum);
+        provider.getSigner().then(s=>{
+          signer=s; walletAddress=accounts[0];
+          // get chain
+          provider.getNetwork().then(n=>{
+            const wc=Number(n.chainId);
+            if(CHAINS[wc]){ selectedChainId=wc; switchChain(wc); }
+            const short=walletAddress.slice(0,6)+'…'+walletAddress.slice(-4);
+            const wb=document.getElementById('walletBtn');
+            wb.textContent=short;wb.classList.add('connected');
+            document.getElementById('networkPill').textContent=CHAINS[selectedChainId]?.short||'Chain '+wc;
+            const ch=CHAINS[selectedChainId];
+            if(ch&&!ch.address.startsWith(PLACEHOLDER)){
+              contract=new ethers.Contract(ch.address,ABI,signer);
+              loadContractData();
+              document.getElementById('mintBtnTxt').textContent='Mint Now';
+            }
+          });
+        });
+      }
+    });
+  }
+});
+</script>
+</body>
+</html>
