@@ -1,0 +1,369 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+/**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  MintNFT_Multichain — $1 per mint, fully on-chain SVG art  ║
+ * ║  Treasury: 0x03Bb17F8776881b185c4EE03eba372bA2b1320fD       ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
+ * DEPLOY THIS SAME CONTRACT ON EACH CHAIN:
+ *   • Ethereum Mainnet   (chainId: 1)
+ *   • Polygon            (chainId: 137)
+ *   • Base               (chainId: 8453)
+ *   • BNB Chain          (chainId: 56)
+ *   • Arbitrum One       (chainId: 42161)
+ *
+ * HOW TO DEPLOY (Remix IDE — remix.ethereum.org):
+ *   1. Paste this file in Remix.
+ *   2. Compile: Solidity 0.8.20, Optimization ON (200 runs).
+ *   3. Deploy & Run → Injected Provider (MetaMask).
+ *   4. Switch MetaMask to the target network, then deploy.
+ *   5. Constructor args:
+ *        _mintPriceUSD  : 1        (= $1)
+ *        _nativeUsdRate : <price>  (e.g. 3500 for ETH, 1 for USDC chains)
+ *        _maxSupply     : 10000    (0 = unlimited)
+ *   6. Copy deployed address → paste into index.html CHAINS config.
+ *   7. Repeat for each network.
+ *
+ * NATIVE TOKEN PRICE GUIDE (update to current rates):
+ *   Ethereum  → ~3500   (ETH/USD)
+ *   Polygon   → ~1      (MATIC ≈ $0.50–$1, set 1 and adjust wei manually)
+ *   Base      → ~3500   (uses ETH)
+ *   BNB Chain → ~600    (BNB/USD)
+ *   Arbitrum  → ~3500   (uses ETH)
+ */
+
+interface IERC165 {
+    function supportsInterface(bytes4 interfaceId) external view returns (bool);
+}
+interface IERC721 is IERC165 {
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
+    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+    function balanceOf(address owner) external view returns (uint256);
+    function ownerOf(uint256 tokenId) external view returns (address);
+    function approve(address to, uint256 tokenId) external;
+    function getApproved(uint256 tokenId) external view returns (address);
+    function setApprovalForAll(address operator, bool approved) external;
+    function isApprovedForAll(address owner, address operator) external view returns (bool);
+    function transferFrom(address from, address to, uint256 tokenId) external;
+    function safeTransferFrom(address from, address to, uint256 tokenId) external;
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata data) external;
+}
+interface IERC721Metadata is IERC721 {
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function tokenURI(uint256 tokenId) external view returns (string memory);
+}
+interface IERC721Receiver {
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4);
+}
+
+/**
+ * Minimal ERC-721 implementation (no OpenZeppelin dependency — works on any chain)
+ */
+contract MintNFT_Multichain is IERC721Metadata {
+
+    /* ── Constants ── */
+    address public constant TREASURY = 0x03Bb17F8776881b185c4EE03eba372bA2b1320fD;
+
+    /* ── Storage ── */
+    string private _name;
+    string private _symbol;
+    address public owner;
+
+    uint256 public mintPriceInWei;
+    uint256 public totalMinted;
+    uint256 public maxSupply;
+
+    mapping(uint256 => address) private _owners;
+    mapping(address => uint256) private _balances;
+    mapping(uint256 => address) private _tokenApprovals;
+    mapping(address => mapping(address => bool)) private _operatorApprovals;
+
+    // On-chain art seed per token
+    mapping(uint256 => uint256) private _seeds;
+
+    /* ── Events ── */
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event Approval(address indexed owner_, address indexed approved, uint256 indexed tokenId);
+    event ApprovalForAll(address indexed owner_, address indexed operator, bool approved);
+    event Minted(address indexed to, uint256 startId, uint256 quantity, uint256 paid);
+    event PriceUpdated(uint256 newWei);
+
+    /* ── Modifiers ── */
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       CONSTRUCTOR
+    ══════════════════════════════════════════════════════ */
+    constructor(
+        uint256 _mintPriceUSD,   // e.g. 1
+        uint256 _nativeUsdRate,  // e.g. 3500 for ETH chains
+        uint256 _maxSupply       // 0 = unlimited
+    ) {
+        _name   = "MintDrop";
+        _symbol = "MDROP";
+        owner   = TREASURY;
+        maxSupply = _maxSupply;
+        // $1 worth of native token in wei
+        mintPriceInWei = (_mintPriceUSD * 1 ether) / _nativeUsdRate;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       MINT
+    ══════════════════════════════════════════════════════ */
+    function mint(uint256 quantity) external payable {
+        require(quantity >= 1 && quantity <= 20, "Qty 1-20");
+        if (maxSupply > 0) require(totalMinted + quantity <= maxSupply, "Sold out");
+
+        uint256 cost = mintPriceInWei * quantity;
+        require(msg.value >= cost, "Insufficient");
+
+        uint256 startId = totalMinted + 1;
+        for (uint256 i = 0; i < quantity; i++) {
+            uint256 tid = totalMinted + 1;
+            totalMinted++;
+            _owners[tid] = msg.sender;
+            _balances[msg.sender]++;
+            // Deterministic but varied seed per token
+            _seeds[tid] = uint256(keccak256(abi.encodePacked(
+                block.timestamp, block.prevrandao, msg.sender, tid
+            )));
+            emit Transfer(address(0), msg.sender, tid);
+        }
+
+        // Refund excess
+        if (msg.value > cost) {
+            (bool refund,) = msg.sender.call{value: msg.value - cost}("");
+            require(refund, "Refund failed");
+        }
+
+        // Forward to treasury immediately
+        (bool ok,) = TREASURY.call{value: cost}("");
+        require(ok, "Treasury transfer failed");
+
+        emit Minted(msg.sender, startId, quantity, cost);
+    }
+
+    /* ══════════════════════════════════════════════════════
+       ON-CHAIN SVG METADATA
+    ══════════════════════════════════════════════════════ */
+    function tokenURI(uint256 tokenId) external view override returns (string memory) {
+        require(_owners[tokenId] != address(0), "Nonexistent");
+        string memory svg = _buildSVG(tokenId);
+        string memory json = string(abi.encodePacked(
+            '{"name":"MintDrop #', _toString(tokenId),
+            '","description":"A $1 generative NFT minted on-chain. No IPFS. No dependencies.","image":"data:image/svg+xml;base64,',
+            _base64(bytes(svg)),
+            '","attributes":[{"trait_type":"Token ID","value":"', _toString(tokenId),
+            '"},{"trait_type":"Chain","value":"', _toString(block.chainid),
+            '"},{"trait_type":"Edition","value":"Genesis"}]}'
+        ));
+        return string(abi.encodePacked("data:application/json;base64,", _base64(bytes(json))));
+    }
+
+    function _buildSVG(uint256 tokenId) internal view returns (string memory) {
+        uint256 seed = _seeds[tokenId];
+        // Derive palette colours from seed
+        string memory c1 = _hsl(seed % 360,            80, 55);
+        string memory c2 = _hsl((seed / 360) % 360,    75, 60);
+        string memory c3 = _hsl((seed / 129600) % 360, 90, 50);
+
+        uint256 r1 = 60  + (seed % 80);
+        uint256 r2 = 40  + ((seed / 100) % 60);
+        uint256 cx = 100 + (seed % 200);
+        uint256 cy = 80  + ((seed / 1000) % 160);
+
+        return string(abi.encodePacked(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">',
+            '<defs>',
+            '<radialGradient id="bg" cx="50%" cy="50%" r="70%">',
+            '<stop offset="0%" stop-color="#0d0d0d"/>',
+            '<stop offset="100%" stop-color="#050505"/>',
+            '</radialGradient>',
+            '<radialGradient id="g1" cx="40%" cy="40%" r="60%">',
+            '<stop offset="0%" stop-color="', c1, '" stop-opacity="0.5"/>',
+            '<stop offset="100%" stop-color="', c1, '" stop-opacity="0"/>',
+            '</radialGradient>',
+            '</defs>',
+            '<rect width="400" height="400" fill="url(#bg)"/>',
+            '<rect width="400" height="400" fill="url(#g1)"/>',
+            _gridLines(),
+            '<circle cx="', _toString(cx), '" cy="', _toString(cy),
+                '" r="', _toString(r1), '" fill="none" stroke="', c2, '" stroke-width="1.5" opacity="0.6"/>',
+            '<circle cx="', _toString(400-cx), '" cy="', _toString(400-cy),
+                '" r="', _toString(r2), '" fill="none" stroke="', c3, '" stroke-width="1" opacity="0.5"/>',
+            _hexagon(200, 200, 120, c1),
+            _hexagon(200, 200, 75,  c2),
+            '<circle cx="200" cy="200" r="18" fill="', c1, '" opacity="0.8"/>',
+            '<text x="200" y="376" font-family="monospace" font-size="11" fill="',
+                c2, '" text-anchor="middle" opacity="0.7">MINTDROP #', _toString(tokenId), '</text>',
+            '<text x="200" y="392" font-family="monospace" font-size="9" fill="#555" text-anchor="middle">',
+                'CHAIN ', _toString(block.chainid), '</text>',
+            '</svg>'
+        ));
+    }
+
+    function _gridLines() internal pure returns (string memory) {
+        return string(abi.encodePacked(
+            '<line x1="0" y1="100" x2="400" y2="100" stroke="#ffffff" stroke-width="0.3" opacity="0.05"/>',
+            '<line x1="0" y1="200" x2="400" y2="200" stroke="#ffffff" stroke-width="0.3" opacity="0.05"/>',
+            '<line x1="0" y1="300" x2="400" y2="300" stroke="#ffffff" stroke-width="0.3" opacity="0.05"/>',
+            '<line x1="100" y1="0" x2="100" y2="400" stroke="#ffffff" stroke-width="0.3" opacity="0.05"/>',
+            '<line x1="200" y1="0" x2="200" y2="400" stroke="#ffffff" stroke-width="0.3" opacity="0.05"/>',
+            '<line x1="300" y1="0" x2="300" y2="400" stroke="#ffffff" stroke-width="0.3" opacity="0.05"/>'
+        ));
+    }
+
+    function _hexagon(uint256 cx, uint256 cy, uint256 r, string memory col)
+        internal pure returns (string memory)
+    {
+        // Precomputed unit hexagon vertices * r, shifted to cx,cy
+        // cos(0°,60°,...) × r and sin × r — using integer approximations
+        // Points: (r,0),(r/2,r*866/1000),(-r/2,r*866/1000),(-r,...) mirrored
+        uint256 h = r * 866 / 1000; // r * sin(60°)
+        uint256 h2 = r / 2;
+        string memory pts = string(abi.encodePacked(
+            _toString(cx + r),  ',', _toString(cy),        ' ',
+            _toString(cx + h2), ',', _toString(cy + h),    ' ',
+            _toString(cx - h2), ',', _toString(cy + h),    ' ',
+            _toString(cx - r),  ',', _toString(cy),        ' ',
+            _toString(cx - h2), ',', _toString(cy - h),    ' ',
+            _toString(cx + h2), ',', _toString(cy - h)
+        ));
+        return string(abi.encodePacked(
+            '<polygon points="', pts, '" fill="none" stroke="', col,
+            '" stroke-width="1.5" opacity="0.45"/>'
+        ));
+    }
+
+    function _hsl(uint256 h, uint256 s, uint256 l) internal pure returns (string memory) {
+        return string(abi.encodePacked(
+            'hsl(', _toString(h), ',', _toString(s), '%,', _toString(l), '%)'
+        ));
+    }
+
+    /* ══════════════════════════════════════════════════════
+       OWNER CONTROLS
+    ══════════════════════════════════════════════════════ */
+    function setMintPriceInWei(uint256 newWei) external onlyOwner {
+        mintPriceInWei = newWei;
+        emit PriceUpdated(newWei);
+    }
+    function setMaxSupply(uint256 newMax) external onlyOwner { maxSupply = newMax; }
+    function withdraw() external onlyOwner {
+        (bool ok,) = TREASURY.call{value: address(this).balance}("");
+        require(ok);
+    }
+
+    /* ══════════════════════════════════════════════════════
+       ERC-721 STANDARD
+    ══════════════════════════════════════════════════════ */
+    function name()   external view override returns (string memory) { return _name; }
+    function symbol() external view override returns (string memory) { return _symbol; }
+
+    function balanceOf(address addr) external view override returns (uint256) {
+        require(addr != address(0), "Zero addr");
+        return _balances[addr];
+    }
+    function ownerOf(uint256 tokenId) external view override returns (address) {
+        address o = _owners[tokenId];
+        require(o != address(0), "Nonexistent");
+        return o;
+    }
+    function approve(address to, uint256 tokenId) external override {
+        address o = _owners[tokenId];
+        require(msg.sender == o || _operatorApprovals[o][msg.sender], "Not authorized");
+        _tokenApprovals[tokenId] = to;
+        emit Approval(o, to, tokenId);
+    }
+    function getApproved(uint256 tokenId) external view override returns (address) {
+        return _tokenApprovals[tokenId];
+    }
+    function setApprovalForAll(address operator, bool approved) external override {
+        _operatorApprovals[msg.sender][operator] = approved;
+        emit ApprovalForAll(msg.sender, operator, approved);
+    }
+    function isApprovedForAll(address o, address op) external view override returns (bool) {
+        return _operatorApprovals[o][op];
+    }
+    function transferFrom(address from, address to, uint256 tokenId) public override {
+        require(_isApprovedOrOwner(msg.sender, tokenId), "Not authorized");
+        _transfer(from, to, tokenId);
+    }
+    function safeTransferFrom(address from, address to, uint256 tokenId) external override {
+        safeTransferFrom(from, to, tokenId, "");
+    }
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata data) public override {
+        transferFrom(from, to, tokenId);
+        if (to.code.length > 0) {
+            try IERC721Receiver(to).onERC721Received(msg.sender, from, tokenId, data)
+                returns (bytes4 r) { require(r == IERC721Receiver.onERC721Received.selector); }
+            catch { revert("Non-receiver"); }
+        }
+    }
+    function supportsInterface(bytes4 id) external pure override returns (bool) {
+        return id == type(IERC721).interfaceId
+            || id == type(IERC721Metadata).interfaceId
+            || id == type(IERC165).interfaceId;
+    }
+    function _isApprovedOrOwner(address spender, uint256 tokenId) internal view returns (bool) {
+        address o = _owners[tokenId];
+        return spender == o || _tokenApprovals[tokenId] == spender || _operatorApprovals[o][spender];
+    }
+    function _transfer(address from, address to, uint256 tokenId) internal {
+        require(_owners[tokenId] == from, "Wrong owner");
+        require(to != address(0), "Zero addr");
+        _balances[from]--;
+        _balances[to]++;
+        _owners[tokenId] = to;
+        delete _tokenApprovals[tokenId];
+        emit Transfer(from, to, tokenId);
+    }
+
+    /* ══════════════════════════════════════════════════════
+       UTILITIES
+    ══════════════════════════════════════════════════════ */
+    function _toString(uint256 v) internal pure returns (string memory) {
+        if (v == 0) return "0";
+        uint256 tmp = v; uint256 digits;
+        while (tmp != 0) { digits++; tmp /= 10; }
+        bytes memory buf = new bytes(digits);
+        while (v != 0) { digits--; buf[digits] = bytes1(uint8(48 + v % 10)); v /= 10; }
+        return string(buf);
+    }
+
+    bytes private constant B64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    function _base64(bytes memory data) internal pure returns (string memory) {
+        uint256 len = data.length;
+        if (len == 0) return "";
+        uint256 outLen = 4 * ((len + 2) / 3);
+        bytes memory out = new bytes(outLen);
+        uint256 i; uint256 j;
+        for (; i + 2 < len; i += 3) {
+            out[j++] = B64[(uint8(data[i]) >> 2)];
+            out[j++] = B64[((uint8(data[i]) & 3) << 4) | (uint8(data[i+1]) >> 4)];
+            out[j++] = B64[((uint8(data[i+1]) & 15) << 2) | (uint8(data[i+2]) >> 6)];
+            out[j++] = B64[uint8(data[i+2]) & 63];
+        }
+        if (i < len) {
+            out[j++] = B64[uint8(data[i]) >> 2];
+            if (i + 1 < len) {
+                out[j++] = B64[((uint8(data[i]) & 3) << 4) | (uint8(data[i+1]) >> 4)];
+                out[j++] = B64[(uint8(data[i+1]) & 15) << 2];
+            } else {
+                out[j++] = B64[(uint8(data[i]) & 3) << 4];
+                out[j++] = '=';
+            }
+            out[j++] = '=';
+        }
+        return string(out);
+    }
+}
